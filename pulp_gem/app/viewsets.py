@@ -92,6 +92,33 @@ class GemContentViewSet(ContentViewSet):
     serializer_class = GemContentSerializer
     filter_class = GemContentFilter
 
+    @transaction.atomic
+    def create(self, request):
+        try:
+            artifact = self.get_resource(request.data['artifact'], Artifact)
+        except KeyError:
+            raise serializers.ValidationError(detail={'artifact': _('This field is required')})
+
+        name, version, spec_artifact = analyse_gem_artifact(artifact)
+        data = request.data
+        data['name'] = name
+        data['version'] = version
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        content = serializer.save()
+
+        relative_path = os.path.join('gems', name + '-' + version + '.gem')
+        spec_relative_path = os.path.join('quick/Marshal.4.8', name + '-' + version + '.gemspec.rz')
+        ContentArtifact(artifact=artifact,
+                        content=content,
+                        relative_path=relative_path).save()
+        ContentArtifact(artifact=spec_artifact,
+                        content=content,
+                        relative_path=spec_relative_path).save()
+
+        headers = self.get_success_headers(request.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class GemRemoteViewSet(RemoteViewSet):
     endpoint_name = 'gem'
